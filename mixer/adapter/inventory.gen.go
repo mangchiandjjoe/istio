@@ -24,6 +24,7 @@ import (
 	memquota "istio.io/istio/mixer/adapter/memquota"
 	noop "istio.io/istio/mixer/adapter/noop"
 	prometheus "istio.io/istio/mixer/adapter/prometheus"
+	redisquota "istio.io/istio/mixer/adapter/redisquota"
 	servicecontrol "istio.io/istio/mixer/adapter/servicecontrol"
 	stackdriver "istio.io/istio/mixer/adapter/stackdriver"
 	statsd "istio.io/istio/mixer/adapter/statsd"
@@ -41,6 +42,7 @@ func Inventory() []adptr.InfoFn {
 		memquota.GetInfo,
 		noop.GetInfo,
 		prometheus.GetInfo,
+		redisquota.GetInfo,
 		servicecontrol.GetInfo,
 		stackdriver.GetInfo,
 		statsd.GetInfo,
