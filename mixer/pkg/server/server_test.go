@@ -110,10 +110,11 @@ func createClient(addr net.Addr) (mixerpb.MixerClient, error) {
 }
 
 func newTestServer(globalCfg, serviceCfg string) (*Server, error) {
-	a := NewArgs()
+	a := DefaultArgs()
 	a.APIPort = 0
 	a.MonitoringPort = 0
 	a.LoggingOptions.LogGrpc = false // Avoid introducing a race to the server tests.
+	a.EnableProfiling = true
 	var err error
 	if a.ConfigStore, err = storetest.SetupStoreForTest(globalCfg, serviceCfg); err != nil {
 		return nil, err
@@ -165,7 +166,7 @@ func TestClient(t *testing.T) {
 }
 
 func TestErrors(t *testing.T) {
-	a := NewArgs()
+	a := DefaultArgs()
 	a.APIWorkerPoolSize = -1
 	a.LoggingOptions.LogGrpc = false // Avoid introducing a race to the server tests.
 	configStore, cerr := storetest.SetupStoreForTest(globalCfg, serviceCfg)
@@ -179,7 +180,8 @@ func TestErrors(t *testing.T) {
 		t.Errorf("Got success, expecting error")
 	}
 
-	a = NewArgs()
+	a = DefaultArgs()
+	a.UseNewRuntime = false
 	a.APIPort = 0
 	a.MonitoringPort = 0
 	a.TracingOptions.LogTraceSpans = true
@@ -195,6 +197,7 @@ func TestErrors(t *testing.T) {
 					return nil, errors.New("BAD")
 				}
 			case 1:
+				// TODO: Runtime2 does not return error on the new path. Once we switch over, we can remove this case.
 				pt.newRuntime = func(eval expr.Evaluator, typeChecker expr.TypeChecker, vocab mixerRuntime.VocabularyChangeListener, gp *pool.GoroutinePool,
 					handlerPool *pool.GoroutinePool,
 					identityAttribute string, defaultConfigNamespace string, s store.Store, adapterInfo map[string]*adapter.Info,
@@ -211,7 +214,7 @@ func TestErrors(t *testing.T) {
 					return nil, errors.New("BAD")
 				}
 			case 4:
-				pt.startMonitor = func(port uint16) (*monitor, error) {
+				pt.startMonitor = func(port uint16, enableProfiling bool) (*monitor, error) {
 					return nil, errors.New("BAD")
 				}
 			case 5:

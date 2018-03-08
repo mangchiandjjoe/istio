@@ -19,8 +19,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
 	"github.com/spf13/cobra/doc"
+
 	"istio.io/istio/mixer/cmd/shared"
 	"istio.io/istio/pkg/collateral"
 	"istio.io/istio/pkg/tracing"
@@ -110,15 +110,8 @@ func GetRootCmd(args []string, printf, fatalf shared.FormatFn) *cobra.Command {
 	rootCmd.SetArgs(args)
 	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
 
-	// hack to make flag.Parsed return true such that glog is happy
-	// about the flags having been parsed
-	fs := flag.NewFlagSet("", flag.ContinueOnError)
-	/* #nosec */
-	_ = fs.Parse([]string{})
-	flag.CommandLine = fs
-
 	rootArgs := &rootArgs{
-		tracingOptions: tracing.NewOptions(),
+		tracingOptions: tracing.DefaultOptions(),
 	}
 
 	cc := checkCmd(rootArgs, printf, fatalf)

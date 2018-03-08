@@ -253,7 +253,7 @@ var (
 	}
 
 	cbRouteRuleV2 = fileConfig{
-		meta: model.ConfigMeta{Type: model.V1alpha2RouteRule.Type, Name: "circuit-breaker"},
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "circuit-breaker"},
 		file: "testdata/cb-route-rule-v1alpha2.yaml.golden",
 	}
 
@@ -263,7 +263,7 @@ var (
 	}
 
 	timeoutRouteRuleV2 = fileConfig{
-		meta: model.ConfigMeta{Type: model.V1alpha2RouteRule.Type, Name: "timeout"},
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "timeout"},
 		file: "testdata/timeout-route-rule-v1alpha2.yaml.golden",
 	}
 
@@ -273,8 +273,43 @@ var (
 	}
 
 	weightedRouteRuleV2 = fileConfig{
-		meta: model.ConfigMeta{Type: model.V1alpha2RouteRule.Type, Name: "weighted"},
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "weighted"},
 		file: "testdata/weighted-route-v1alpha2.yaml.golden",
+	}
+
+	gatewayWeightedRouteRule = fileConfig{
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "gateway-weighted"},
+		file: "testdata/gateway-weighted-route.yaml",
+	}
+
+	gatewayRouteRule = fileConfig{
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "gateway-simple"},
+		file: "testdata/gateway-route.yaml",
+	}
+
+	gatewayWildcardRouteRule = fileConfig{
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "gateway-wildcard-simple"},
+		file: "testdata/gateway-wildcard-route.yaml",
+	}
+
+	gatewayRouteRule2 = fileConfig{
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "gateway-simple-2"},
+		file: "testdata/gateway-route-2.yaml",
+	}
+
+	gatewayConfig = fileConfig{
+		meta: model.ConfigMeta{Type: model.Gateway.Type, Name: "some-gateway"},
+		file: "testdata/gateway.yaml",
+	}
+
+	gatewayConfig2 = fileConfig{
+		meta: model.ConfigMeta{Type: model.Gateway.Type, Name: "some-gateway-2"},
+		file: "testdata/gateway2.yaml",
+	}
+
+	gatewayWildcardConfig = fileConfig{
+		meta: model.ConfigMeta{Type: model.Gateway.Type, Name: "some-gateway-wildcard"},
+		file: "testdata/gateway-wildcard.yaml",
 	}
 
 	faultRouteRule = fileConfig{
@@ -283,12 +318,12 @@ var (
 	}
 
 	faultRouteRuleV2 = fileConfig{
-		meta: model.ConfigMeta{Type: model.V1alpha2RouteRule.Type, Name: "fault"},
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "fault"},
 		file: "testdata/fault-route-v1alpha2.yaml.golden",
 	}
 
 	multiMatchFaultRouteRuleV2 = fileConfig{
-		meta: model.ConfigMeta{Type: model.V1alpha2RouteRule.Type, Name: "multi-match-fault"},
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "multi-match-fault"},
 		file: "testdata/multi-match-fault-v1alpha2.yaml.golden",
 	}
 
@@ -298,7 +333,7 @@ var (
 	}
 
 	redirectRouteRuleV2 = fileConfig{
-		meta: model.ConfigMeta{Type: model.V1alpha2RouteRule.Type, Name: "redirect"},
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "redirect"},
 		file: "testdata/redirect-route-v1alpha2.yaml.golden",
 	}
 
@@ -313,17 +348,17 @@ var (
 	}
 
 	rewriteRouteRuleV2 = fileConfig{
-		meta: model.ConfigMeta{Type: model.V1alpha2RouteRule.Type, Name: "rewrite"},
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "rewrite"},
 		file: "testdata/rewrite-route-v1alpha2.yaml.golden",
 	}
 
 	multiMatchRewriteRouteRuleV2 = fileConfig{
-		meta: model.ConfigMeta{Type: model.V1alpha2RouteRule.Type, Name: "multi-match-rewrite"},
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "multi-match-rewrite"},
 		file: "testdata/multi-match-rewrite-route-v1alpha2.yaml.golden",
 	}
 
 	googleTimeoutRuleV2 = fileConfig{
-		meta: model.ConfigMeta{Type: model.V1alpha2RouteRule.Type, Name: "egress-timeout"}, // FIXME: rename after switch to v1alpha2
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "egress-timeout"}, // FIXME: rename after switch to v1alpha2
 		file: "testdata/google-timeout-rule-v1alpha2.yaml.golden",
 	}
 
@@ -333,7 +368,7 @@ var (
 	}
 
 	websocketRouteRuleV2 = fileConfig{
-		meta: model.ConfigMeta{Type: model.V1alpha2RouteRule.Type, Name: "websocket"},
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "websocket"},
 		file: "testdata/websocket-route-v1alpha2.yaml.golden",
 	}
 
@@ -350,6 +385,11 @@ var (
 	externalServiceRuleDNS = fileConfig{
 		meta: model.ConfigMeta{Type: model.ExternalService.Type, Name: "google"},
 		file: "testdata/external-service-rule-dns.yaml.golden",
+	}
+
+	externalServiceRuleDNSNoEndpoints = fileConfig{
+		meta: model.ConfigMeta{Type: model.ExternalService.Type, Name: "google"},
+		file: "testdata/external-service-rule-dns-no-endpoints.yaml.golden",
 	}
 
 	externalServiceRuleStatic = fileConfig{
@@ -373,7 +413,7 @@ var (
 	}
 
 	externalServiceRouteRule = fileConfig{
-		meta: model.ConfigMeta{Type: model.V1alpha2RouteRule.Type, Name: "ext-route"},
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "ext-route"},
 		file: "testdata/external-service-route-rule.yaml.golden",
 	}
 
@@ -413,7 +453,7 @@ var (
 	}
 
 	addHeaderRuleV2 = fileConfig{
-		meta: model.ConfigMeta{Type: model.V1alpha2RouteRule.Type, Name: "append-headers"},
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "append-headers"},
 		file: "testdata/addheaders-route-v1alpha2.yaml.golden",
 	}
 
@@ -423,7 +463,7 @@ var (
 	}
 
 	corsPolicyRuleV2 = fileConfig{
-		meta: model.ConfigMeta{Type: model.V1alpha2RouteRule.Type, Name: "cors-policy"},
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "cors-policy"},
 		file: "testdata/corspolicy-route-v1alpha2.yaml.golden",
 	}
 
@@ -433,7 +473,7 @@ var (
 	}
 
 	mirrorRuleV2 = fileConfig{
-		meta: model.ConfigMeta{Type: model.V1alpha2RouteRule.Type, Name: "mirror-requests"},
+		meta: model.ConfigMeta{Type: model.VirtualService.Type, Name: "mirror-requests"},
 		file: "testdata/mirror-route-v1alpha2.yaml.golden",
 	}
 
@@ -476,11 +516,11 @@ func addConfig(r model.ConfigStore, config fileConfig, t *testing.T) {
 	}
 	content, err := ioutil.ReadFile(config.file)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("reading %s: %s", config.file, err)
 	}
 	spec, err := schema.FromYAML(string(content))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("parsing yaml for %s: %s", config.file, err)
 	}
 	out := model.Config{
 		ConfigMeta: config.meta,
@@ -493,7 +533,7 @@ func addConfig(r model.ConfigStore, config fileConfig, t *testing.T) {
 
 	_, err = r.Create(out)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("create for %s: %s", config.file, err)
 	}
 }
 
@@ -501,7 +541,7 @@ func makeProxyConfig() meshconfig.ProxyConfig {
 	proxyConfig := model.DefaultProxyConfig()
 	proxyConfig.ZipkinAddress = "localhost:6000"
 	proxyConfig.StatsdUdpAddress = "10.1.1.10:9125"
-	proxyConfig.DiscoveryAddress = "istio-pilot.istio-system:15003"
+	proxyConfig.DiscoveryAddress = "istio-pilot.istio-system:15007"
 	proxyConfig.DiscoveryRefreshDelay = ptypes.DurationProto(10 * time.Millisecond)
 	return proxyConfig
 }
@@ -513,12 +553,14 @@ var (
 func makeProxyConfigControlPlaneAuth() meshconfig.ProxyConfig {
 	proxyConfig := makeProxyConfig()
 	proxyConfig.ControlPlaneAuthPolicy = meshconfig.AuthenticationPolicy_MUTUAL_TLS
+	proxyConfig.DiscoveryAddress = "istio-pilot.istio-system:15005"
 	return proxyConfig
 }
 
 func makeMeshConfig() meshconfig.MeshConfig {
 	mesh := model.DefaultMeshConfig()
-	mesh.MixerAddress = "istio-mixer.istio-system:9091"
+	mesh.MixerCheckServer = "istio-mixer.istio-system:9091"
+	mesh.MixerReportServer = mesh.MixerCheckServer
 	mesh.RdsRefreshDelay = ptypes.DurationProto(10 * time.Millisecond)
 	return mesh
 }
@@ -582,17 +624,17 @@ func TestTruncateClusterName(t *testing.T) {
 
 	var trunc string
 	less := s[:MaxClusterNameLength-1]
-	trunc = truncateClusterName(less)
+	trunc = TruncateClusterName(less)
 	if trunc != less {
 		t.Errorf("Cluster name modified when truncating short cluster name:\nwant %s,\ngot %s", less, trunc)
 	}
 	eq := s[:MaxClusterNameLength]
-	trunc = truncateClusterName(eq)
+	trunc = TruncateClusterName(eq)
 	if trunc != eq {
 		t.Errorf("Cluster name modified when truncating cluster name:\nwant %s,\ngot %s", eq, trunc)
 	}
 	gt := s[:MaxClusterNameLength+1]
-	trunc = truncateClusterName(gt)
+	trunc = TruncateClusterName(gt)
 	if len(trunc) != MaxClusterNameLength {
 		t.Errorf("Cluster name length is not expected: want %d, got %d", MaxClusterNameLength, len(trunc))
 	}

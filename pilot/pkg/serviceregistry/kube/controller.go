@@ -19,8 +19,7 @@ import (
 	"fmt"
 	"reflect"
 	"time"
-	// TODO(nmittler): Remove this
-	_ "github.com/golang/glog"
+
 	"k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -336,17 +335,17 @@ func (c *Controller) Instances(hostname string, ports []string,
 	return nil, nil
 }
 
-// GetSidecarServiceInstances implements a service catalog operation
-func (c *Controller) GetSidecarServiceInstances(svcNodes map[string]*model.Node) ([]*model.ServiceInstance, error) {
+// GetProxyServiceInstances returns service instances co-located with a given proxy
+func (c *Controller) GetProxyServiceInstances(proxy model.Proxy) ([]*model.ServiceInstance, error) {
 	var out []*model.ServiceInstance
 	kubeNodes := make(map[string]*kubeServiceNode)
 	for _, item := range c.endpoints.informer.GetStore().List() {
 		ep := *item.(*v1.Endpoints)
 		for _, ss := range ep.Subsets {
 			for _, ea := range ss.Addresses {
-				if svcNodes[ea.IP] != nil {
+				if proxy.IPAddress == ea.IP {
 					if kubeNodes[ea.IP] == nil {
-						err := parseKubeServiceNode(ea.IP, svcNodes[ea.IP], kubeNodes)
+						err := parseKubeServiceNode(ea.IP, &proxy, kubeNodes)
 						if err != nil {
 							return out, err
 						}

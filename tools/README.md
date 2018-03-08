@@ -1,19 +1,47 @@
 # Istio Load Testing User Guide
+### Introduction
 This guide provides step-by-step instructions for using the `setup_perf_cluster.sh` load testing script.
-The script deploys a GKE cluster, an Istio service mesh, a GCE VM and runs [Fortio](https://github.com/istio/fortio/)
-on the VM and within the mesh. Fortio is used to perform load testing, graph results and as a backend echo server.
+The script deploys a GKE cluster, an Istio service mesh and a GCE VM. The script then runs [Fortio](https://github.com/istio/fortio/)
+on the VM, 2 pods within the cluster (non-Istio) and 2 pods within the Istio mesh. The following diagram provides
+additional details of the deployment:
 
-### Clone Istio
+![Deployment Diagram](perf_setup.svg)
+
+The deployment provides a basis for Istio performance characterization. Fortio is used to perform load testing,
+graphing results and as a backend echo server.
+
+### Download a Release or Clone Istio
+
+From release (either [official](https://github.com/istio/istio/releases) or [dailies](https://github.com/istio/istio/wiki/Daily-builds)):
+```
+curl -L https://git.io/getLatestIstio | sh -  # or download the daily TGZ
+```
+
+From source:
 ```
 $ git clone https://github.com/istio/istio.git && cd istio
 ```
 
 ### Prepare the Istio Deployment Manifest and Istio Client
-__Option A:__ Build the deployment manifest and `istioctl` binary:
+
+__Option A:__ (From release) Make sure `istioctl` is in your path is the one matching the downloaded release.
+
+For instance, in `~/tmp/istio-0.5.0/` run:
 ```
-$ ./install/updateVersion.sh
+export PATH=`pwd`/bin:$PATH
+# check 'which istioctl' and 'istioctl version' returns the correct version
 ```
-Follow the steps in the [Developer Guide](https://github.com/istio/istio/blob/master/DEV-GUIDE.md) to build the `istioctl` binary.
+For versions before 0.5.0 (the tools/ directory is now part of the release)
+```
+$ ln -s $GOPATH/src/istio.io/istio/tools
+```
+If you want to get newer version of the tools, you can `rm -rf tools/` and do the symlink above to use your updated/newer script.
+
+__Option B:__ (From source) Build the deployment manifest and `istioctl` binary:
+```
+$ ./install/updateVersion.sh # This step is only needed when using Istio from source.
+```
+Follow the steps in the [Developer Guide](https://github.com/istio/istio/blob/master/DEV-GUIDE.md) to build the `istioctl` binary. Make sure it does `istioctl kube-inject` producing the HUB/TAG you expect.
 Make the kubectl binary executable.
 ```
 $ chmod +x ./istioctl
@@ -24,15 +52,13 @@ Move the binary in to your PATH.
 $ mv ./istioctl /usr/local/bin/istioctl
 ```
 
-__Option B:__ Follow the [quickstart guide](https://istio.io/docs/setup/kubernetes/quick-start.html) to install the
-manifests and `istioctl` binary. Make sure `istioctl` in your path is the one matching the downloaded release.
-For instance, in `~/tmp/istio-0.4.0/` run:
-```
-$ ln -s $GOPATH/src/istio.io/istio/tools
-```
 
-### Set Your Google Cloud Credentials.
+### Set Your Google Cloud Credentials (optional/one time setup)
+This is not necessary if you already have working `gcloud` commands and you
+did `gcloud auth login` at least once.
 ```
+$ gcloud auth login
+# Or
 $ export GOOGLE_APPLICATION_CREDENTIALS=/my/gce/creds.json
 ```
 If you do not have a Google Cloud account, [set one up](https://cloud.google.com/).
@@ -43,6 +69,9 @@ For example, to update the default gcloud zone (us-east4-b):
 ```
 $ ZONE=us-west1-a
 ```
+If you change either the `PROJECT` or the `ZONE`, make sure to run `update_gcp_opts` before calling the other functions.
+
+The script tries to guess your `PROJECT` but it's safer to set it explicitly. (and use a new empty project if possible)
 
 ### Source the Script
 ```
@@ -75,7 +104,8 @@ istio-system   istio-mixer-3192291716-psskv                           3/3       
 istio-system   istio-pilot-3663920167-4ns3g                           2/2       Running   0          7m
 <SNIP>
 ```
-You can now run the performance tests:
+You can now run the performance tests, either from the command line or interactively using the UIs (see next section). For command lines there are a couple of examples in the `run_tests` function:
+
 ```
 $ run_tests
 ```
@@ -109,8 +139,9 @@ of the Istio service mesh:
 ```
 Compare the test results to understand the load differential between the 3 test cases.
 
-### Additional Testing
-Fortio provides a [Web UI](https://user-images.githubusercontent.com/3664595/34192808-1983be12-e505-11e7-9c16-2ee9f101f2ce.png) that
+### Interactive Testing / UI Graphing of results
+
+Fortio provides a [Web UI](https://github.com/istio/fortio#webgraphical-ui) that
 can be used to perform load testing. You can call the `get_ips` function to obtain Fortio endpoint information for further load testing:
 ```
 $ get_ips
@@ -127,3 +158,88 @@ to one of the Fortio echo servers:
 
 Fortio provides additional load testing capabilities not covered by this document. For more information, refer to the
 [Fortio documentation](https://github.com/istio/fortio/blob/master/README.md)
+
+### Canonical Tests
+
+There is a set of canonical tests in ```run_canonical_perf_tests.sh``` script that runs tests by changing parameters in
+various dimensions:
+- Number of clients
+- QPS
+- Cached v.s. non-cached
+
+If you have a change that you think might affect performance, then you can run these tests to check the affects.
+
+To establish a baseline, simply deploy a perf cluster using the instructions above. Then run
+```run_canonical_perf_tests.sh``` to establish the baseline. You will see output that looks like this:
+
+```
+> run_canonical_perf_tests.sh
++++ In k8s istio ingress: http://<ip>/fortio1/fortio/ and fortio2
+Running 'canonical+fortio2+echo1+Q100+T1s+C16' and storing results in /tmp/istio_perf.cpxCcs/canonical_fortio2_echo1_Q100_T1s_C16.json
++++ In k8s istio ingress: http://<ip>/fortio1/fortio/ and fortio2
+Running 'canonical+fortio2+echo1+Q400+T1s+C16' and storing results in /tmp/istio_perf.cpxCcs/canonical_fortio2_echo1_Q400_T1s_C16.json
+...
+```
+
+You can check the Fortio UI of the respective drivers to see the results. Also, you can checkout the raw json files
+that gets stored in the temporary folder that is in the output above:
+
+```
+ls /tmp/istio_perf.cpxCcs/
+canonical_fortio2_echo1_Q1000_T1s_C16.json  canonical_fortio2_echo1_Q100_T1s_C20.json   canonical_fortio2_echo1_Q1200_T1s_C24.json  canonical_fortio2_echo1_Q400_T1s_C16.json
+canonical_fortio2_echo1_Q1000_T1s_C20.json  canonical_fortio2_echo1_Q100_T1s_C24.json   canonical_fortio2_echo1_Q1600_T1s_C16.json  canonical_fortio2_echo1_Q400_T1s_C20.json
+canonical_fortio2_echo1_Q1000_T1s_C24.json  canonical_fortio2_echo1_Q1200_T1s_C16.json  canonical_fortio2_echo1_Q1600_T1s_C20.json  canonical_fortio2_echo1_Q400_T1s_C24.json
+canonical_fortio2_echo1_Q100_T1s_C16.json   canonical_fortio2_echo1_Q1200_T1s_C20.json  canonical_fortio2_echo1_Q1600_T1s_C24.json  out.csv
+```
+
+You can run `fortio report -data-dir /tmp/istio_perf.cpxCcs/` to see all the results and graph them/compare them by visiting `http://localhost:8080`
+
+Alternatively, notice the ```out.csv``` file in the folder. This file contains all the data in the individual json files, and can be
+imported into a spreadsheet:
+
+
+```
+> cat /tmp/istio_perf.cpxCcs/out.csv
+Label,Driver,Target,qps,duration,clients,min,max,avg,p50,p75,p90,p99,p99.9
+canonical,fortio2,echo1,1200,1s,16,0.00243703,0.059164527,0.0134183966225,0.0108966942149,0.01594375,0.02405,0.048646875,0.0575867009348
+canonical,fortio2,echo1,1200,1s,24,0.003420898,0.086621239,0.0248239801951,0.0203296703297,0.0303731343284,0.0494375,0.080344304428,0.085993545542
+...
+```
+
+To test the affects of your change, simply update your cluster with your binaries by following the
+[Developer Guide](https://github.com/istio/istio/blob/master/DEV-GUIDE.md) and rerun the tests again. To ensure
+you're tracking the results of your changes correctly, you can explicitly specify a label:
+
+```
+# Notice the "mylabel" parameter below:
+#
+> run_canonical_perf_tests.sh mylabel
++++ In k8s istio ingress: http://<ip>/fortio1/fortio/ and fortio2
+Running 'mylabel+fortio2+echo1+Q400+T1s+C16' and storing results in /tmp/istio_perf.0XuSIH/mylabel_fortio2_echo1_Q400_T1s_C16.json
++++ In k8s istio ingress: http://<ip>/fortio1/fortio/ and fortio2
+...
+```
+
+After the run, you can find the new results both in Fortio UI, and also in the temporary folder:
+
+```
+> ls /tmp/istio_perf.0XuSIH/
+mylabel_fortio2_echo1_Q1000_T1s_C16.json  mylabel_fortio2_echo1_Q100_T1s_C20.json   mylabel_fortio2_echo1_Q1200_T1s_C24.json  mylabel_fortio2_echo1_Q400_T1s_C16.json
+mylabel_fortio2_echo1_Q1000_T1s_C20.json  mylabel_fortio2_echo1_Q100_T1s_C24.json   mylabel_fortio2_echo1_Q1600_T1s_C16.json  mylabel_fortio2_echo1_Q400_T1s_C20.json
+mylabel_fortio2_echo1_Q1000_T1s_C24.json  mylabel_fortio2_echo1_Q1200_T1s_C16.json  mylabel_fortio2_echo1_Q1600_T1s_C20.json  mylabel_fortio2_echo1_Q400_T1s_C24.json
+mylabel_fortio2_echo1_Q100_T1s_C16.json   mylabel_fortio2_echo1_Q1200_T1s_C20.json  mylabel_fortio2_echo1_Q1600_T1s_C24.json  out.csv
+```
+
+### Uninstall
+Use the `delete_all` function to remove everything done by the `setup_all` function. The following delete functions are used by
+`delete_all` and may be called individually:
+```
+$ delete_istio
+$ delete_cluster
+$ delete_vm
+$ delete_vm_firewall
+```
+
+### See also
+
+[Perf setup FAQ wiki](https://github.com/istio/istio/wiki/Istio-Performance-oriented-setup-FAQ)

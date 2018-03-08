@@ -25,8 +25,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
-
 	"google.golang.org/grpc/status"
+
 	"istio.io/istio/pkg/log"
 	"istio.io/istio/security/pkg/pki/ca"
 	"istio.io/istio/security/pkg/pki/util"
@@ -65,18 +65,13 @@ func (s *Server) HandleCSR(ctx context.Context, request *pb.CsrRequest) (*pb.Csr
 		return nil, status.Errorf(codes.InvalidArgument, "CSR parsing error (%v)", err)
 	}
 
-	requestedIDs, err := util.ExtractIDs(csr.Extensions)
+	_, err = util.ExtractIDs(csr.Extensions)
 	if err != nil {
 		log.Warnf("CSR identity extraction error (%v)", err)
 		return nil, status.Errorf(codes.InvalidArgument, "CSR identity extraction error (%v)", err)
 	}
 
-	err = s.authorizer.authorize(caller, requestedIDs)
-	if err != nil {
-		log.Warnf("request is not authorized (%v)", err)
-		return nil, status.Errorf(codes.PermissionDenied, "request is not authorized (%v)", err)
-	}
-
+	_, _, certChainBytes, _ := s.ca.GetCAKeyCertBundle().GetAll()
 	cert, err := s.ca.Sign(request.CsrPem, time.Duration(request.RequestedTtlMinutes)*time.Minute, request.ForCA)
 	if err != nil {
 		log.Errorf("CSR signing error (%v)", err)
@@ -84,8 +79,9 @@ func (s *Server) HandleCSR(ctx context.Context, request *pb.CsrRequest) (*pb.Csr
 	}
 
 	response := &pb.CsrResponse{
-		IsApproved:      true,
-		SignedCertChain: cert,
+		IsApproved: true,
+		SignedCert: cert,
+		CertChain:  certChainBytes,
 	}
 	log.Info("CSR successfully signed.")
 
@@ -142,7 +138,8 @@ func New(ca ca.CertificateAuthority, ttl time.Duration, hostname string, port in
 
 func (s *Server) createTLSServerOption() grpc.ServerOption {
 	cp := x509.NewCertPool()
-	cp.AppendCertsFromPEM(s.ca.GetRootCertificate())
+	_, _, _, rootCertBytes := s.ca.GetCAKeyCertBundle().GetAll()
+	cp.AppendCertsFromPEM(rootCertBytes)
 
 	config := &tls.Config{
 		ClientCAs:  cp,

@@ -28,8 +28,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
-	// TODO(nmittler): Remove this
-	_ "github.com/golang/glog"
+
 	"github.com/google/go-github/github"
 	"github.com/pkg/errors"
 
@@ -324,7 +323,7 @@ func ExtractTarGz(gzipStream io.Reader) error {
 			if err != nil {
 				return errors.Wrap(err, "ExtractTarGz: Create() failed")
 			}
-			defer outFile.Close()
+			defer outFile.Close() // nolint: errcheck
 			if _, err := io.Copy(outFile, tarReader); err != nil {
 				return errors.Wrap(err, "ExtractTarGz: Copy() failed")
 			}

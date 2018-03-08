@@ -25,14 +25,14 @@ import (
 	"os/exec"
 	"path"
 	"time"
-	// TODO(nmittler): Remove this
-	_ "github.com/golang/glog"
+
 	multierror "github.com/hashicorp/go-multierror"
 	"github.com/howeyc/fsnotify"
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/proxy"
+	"istio.io/istio/pkg/bootstrap"
 	"istio.io/istio/pkg/log"
 )
 
@@ -55,7 +55,7 @@ type CertSource struct {
 
 type watcher struct {
 	agent    proxy.Agent
-	role     model.Node
+	role     model.Proxy
 	config   meshconfig.ProxyConfig
 	certs    []CertSource
 	pilotSAN []string
@@ -63,7 +63,7 @@ type watcher struct {
 
 // NewWatcher creates a new watcher instance from a proxy agent and a set of monitored certificate paths
 // (directories with files in them)
-func NewWatcher(config meshconfig.ProxyConfig, agent proxy.Agent, role model.Node,
+func NewWatcher(config meshconfig.ProxyConfig, agent proxy.Agent, role model.Proxy,
 	certs []CertSource, pilotSAN []string) Watcher {
 	return &watcher{
 		agent:    agent,
@@ -116,8 +116,9 @@ func (w *watcher) Reload() {
 // retrieveAZ will only run once and then exit because AZ won't change over a proxy's lifecycle
 // it has to use a reload due to limitations with envoy (az has to be passed in as a flag)
 func (w *watcher) retrieveAZ(ctx context.Context, delay time.Duration, retries int) {
-	if w.config.AvailabilityZone == "" {
-		log.Info("Availability zone not set, proxy will default to not using zone aware routing. To manually override use the --availabilityZone flag.")
+	if !model.IsApplicationNodeType(w.role.Type) {
+		log.Infof("Agent is proxy for %v component. This component does not require zone aware routing.", w.role.Type)
+		return
 	}
 	attempts := 0
 	for w.config.AvailabilityZone == "" && attempts <= retries {
@@ -140,6 +141,9 @@ func (w *watcher) retrieveAZ(ctx context.Context, delay time.Duration, retries i
 			_ = resp.Body.Close()
 		}
 		attempts++
+	}
+	if w.config.AvailabilityZone == "" {
+		log.Info("Availability zone not set, proxy will default to not using zone aware routing.")
 	}
 }
 
@@ -238,6 +242,10 @@ type envoy struct {
 	config    meshconfig.ProxyConfig
 	node      string
 	extraArgs []string
+	v2        bool
+	pilotSAN  []string
+	opts      map[string]interface{}
+	errChan   chan error
 }
 
 // NewProxy creates an instance of the proxy control commands
@@ -255,6 +263,28 @@ func NewProxy(config meshconfig.ProxyConfig, node string, logLevel string) proxy
 	}
 }
 
+// NewV2Proxy creates an instance of the proxy using v2 bootstrap
+func NewV2Proxy(config meshconfig.ProxyConfig, node string, logLevel string, pilotSAN []string) proxy.Proxy {
+	proxy := NewProxy(config, node, logLevel)
+	e := proxy.(envoy)
+	e.v2 = true
+	e.pilotSAN = pilotSAN
+	return e
+}
+
+// NewV2ProxyCustom creates a proxy runner with custom options that can be injected in
+// template
+func NewV2ProxyCustom(config meshconfig.ProxyConfig, node string, logLevel string,
+	pilotSAN []string, opts map[string]interface{}, errChan chan error) proxy.Proxy {
+	proxy := NewProxy(config, node, logLevel)
+	e := proxy.(envoy)
+	e.v2 = true
+	e.pilotSAN = pilotSAN
+	e.errChan = errChan
+	e.opts = opts
+	return e
+}
+
 func (proxy envoy) args(fname string, epoch int) []string {
 	startupArgs := []string{"-c", fname,
 		"--restart-epoch", fmt.Sprint(epoch),
@@ -266,6 +296,10 @@ func (proxy envoy) args(fname string, epoch int) []string {
 	}
 
 	startupArgs = append(startupArgs, proxy.extraArgs...)
+
+	if proxy.config.Concurrency > 0 {
+		startupArgs = append(startupArgs, "--concurrency", fmt.Sprint(proxy.config.Concurrency))
+	}
 
 	if len(proxy.config.AvailabilityZone) > 0 {
 		startupArgs = append(startupArgs, []string{"--service-zone", proxy.config.AvailabilityZone}...)
@@ -287,6 +321,14 @@ func (proxy envoy) Run(config interface{}, epoch int, abort <-chan error) error 
 	if len(proxy.config.CustomConfigFile) > 0 {
 		// there is a custom configuration. Don't write our own config - but keep watching the certs.
 		fname = proxy.config.CustomConfigFile
+	} else if proxy.v2 {
+		out, err := bootstrap.WriteBootstrap(&proxy.config, epoch, proxy.pilotSAN, proxy.opts)
+		if err != nil {
+			log.Errora("Failed to generate bootstrap config", err)
+			os.Exit(1) // Prevent infinite loop attempting to write the file, let k8s/systemd report
+			return err
+		}
+		fname = out
 	} else {
 		// create parent directories if necessary
 		if err := os.MkdirAll(proxy.config.ConfigPath, 0700); err != nil {
@@ -302,7 +344,9 @@ func (proxy envoy) Run(config interface{}, epoch int, abort <-chan error) error 
 
 	// spin up a new Envoy process
 	args := proxy.args(fname, epoch)
-
+	if proxy.v2 && len(proxy.config.CustomConfigFile) == 0 {
+		args = append(args, "--v2-config-only")
+	}
 	log.Infof("Envoy command: %v", args)
 
 	/* #nosec */
@@ -311,6 +355,16 @@ func (proxy envoy) Run(config interface{}, epoch int, abort <-chan error) error 
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
 		return err
+	}
+
+	// Set if the caller is monitoring envoy, for example in tests or if envoy runs in same
+	// container with the app.
+	if proxy.errChan != nil {
+		// Caller passed a channel, will wait itself for termination
+		go func() {
+			proxy.errChan <- cmd.Wait()
+		}()
+		return nil
 	}
 
 	done := make(chan error, 1)

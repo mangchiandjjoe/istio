@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
+	networking "istio.io/api/networking/v1alpha3"
 )
 
 // Service describes an Istio service (e.g., catalog.mystore.com:8080)
@@ -199,6 +200,10 @@ type LabelsCollection []Labels
 // description (which is oblivious to various versions) and a set of labels
 // that describe the service version associated with this instance.
 //
+// Since a ServiceInstance has a single NetworkEndpoint, which has a single port,
+// multiple ServiceInstances are required to represent a workload that listens
+// on multiple ports.
+//
 // The labels associated with a service instance are unique per a network endpoint.
 // There is one well defined set of labels for each service instance network endpoint.
 //
@@ -243,8 +248,24 @@ type ServiceDiscovery interface {
 	// port, hostname and labels.
 	Instances(hostname string, ports []string, labels LabelsCollection) ([]*ServiceInstance, error)
 
-	// GetSidecarServiceInstances returns the service instances that are hosted on (implemented by) a given Node
-	GetSidecarServiceInstances(addrs map[string]*Node) ([]*ServiceInstance, error)
+	// GetProxyServiceInstances returns the service instances that co-located with a given Proxy
+	//
+	// Co-located generally means running in the same network namespace and security context.
+	//
+	// A Proxy operating as a Sidecar will return a non-empty slice.  A stand-alone Proxy
+	// will return an empty slice.
+	//
+	// There are two reasons why this returns multiple ServiceInstances instead of one:
+	// - A ServiceInstance has a single NetworkEndpoint which has a single Port.  But a Service
+	//   may have many ports.  So a workload implementing such a Service would need
+	//   multiple ServiceInstances, one for each port.
+	// - A single workload may implement multiple logical Services.
+	//
+	// In the second case, multiple services may be implemented by the same physical port number,
+	// though with a different ServicePort and NetworkEndpoint for each.  If any of these overlapping
+	// services are not HTTP or H2-based, behavior is undefined, since the listener may not be able to
+	// determine the intended destination of a connection without a Host header on the request.
+	GetProxyServiceInstances(Proxy) ([]*ServiceInstance, error)
 
 	// ManagementPorts lists set of management ports associated with an IPv4 address.
 	// These management ports are typically used by the platform for out of band management
@@ -295,6 +316,21 @@ func (labels LabelsCollection) HasSubsetOf(that Labels) bool {
 		}
 	}
 	return false
+}
+
+// Match returns true if port matches with port selector criteria.
+func (port Port) Match(portSelector *networking.PortSelector) bool {
+	if portSelector == nil {
+		return true
+	}
+	switch portSelector.Port.(type) {
+	case *networking.PortSelector_Name:
+		return portSelector.GetName() == port.Name
+	case *networking.PortSelector_Number:
+		return portSelector.GetNumber() == uint32(port.Port)
+	default:
+		return false
+	}
 }
 
 // GetNames returns port names

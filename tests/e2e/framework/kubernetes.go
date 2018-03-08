@@ -24,8 +24,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	// TODO(nmittler): Remove this
-	_ "github.com/golang/glog"
 
 	"istio.io/istio/pkg/log"
 	"istio.io/istio/tests/util"
@@ -41,16 +39,17 @@ const (
 	authInstallFileNamespace    = "istio-one-namespace-auth.yaml"
 	istioSystem                 = "istio-system"
 	defaultSidecarInjectorFile  = "istio-sidecar-injector.yaml"
+	mixerValidatorFile          = "istio-mixer-validator.yaml"
 )
 
 var (
 	namespace           = flag.String("namespace", "", "Namespace to use for testing (empty to create/delete temporary one)")
-	mixerHub            = flag.String("mixer_hub", os.Getenv("HUB"), "Mixer hub, if different from istio.Version")
-	mixerTag            = flag.String("mixer_tag", os.Getenv("TAG"), "Mixer tag, if different from istio.Version")
-	pilotHub            = flag.String("pilot_hub", os.Getenv("HUB"), "Pilot hub, if different from istio.Version")
-	pilotTag            = flag.String("pilot_tag", os.Getenv("TAG"), "Pilot tag, if different from istio.Version")
-	proxyHub            = flag.String("proxy_hub", os.Getenv("HUB"), "Proxy hub, if different from istio.Version")
-	proxyTag            = flag.String("proxy_tag", os.Getenv("TAG"), "Proxy tag, if different from istio.Version")
+	mixerHub            = flag.String("mixer_hub", os.Getenv("HUB"), "Mixer hub")
+	mixerTag            = flag.String("mixer_tag", os.Getenv("TAG"), "Mixer tag")
+	pilotHub            = flag.String("pilot_hub", os.Getenv("HUB"), "Pilot hub")
+	pilotTag            = flag.String("pilot_tag", os.Getenv("TAG"), "Pilot tag")
+	proxyHub            = flag.String("proxy_hub", os.Getenv("HUB"), "Proxy hub")
+	proxyTag            = flag.String("proxy_tag", os.Getenv("TAG"), "Proxy tag")
 	caHub               = flag.String("ca_hub", os.Getenv("HUB"), "Ca hub")
 	caTag               = flag.String("ca_tag", os.Getenv("TAG"), "Ca tag")
 	authEnable          = flag.Bool("auth_enable", false, "Enable auth")
@@ -58,6 +57,7 @@ var (
 	skipSetup           = flag.Bool("skip_setup", false, "Skip namespace creation and istio cluster setup")
 	sidecarInjectorFile = flag.String("sidecar_injector_file", defaultSidecarInjectorFile, "Sidecar injector yaml file")
 	clusterWide         = flag.Bool("cluster_wide", false, "Run cluster wide tests")
+	withMixerValidator  = flag.Bool("with_mixer_validator", false, "Set up mixer validator")
 
 	addons = []string{
 		"prometheus",
@@ -114,7 +114,10 @@ func newKubeInfo(tmpDir, runID, baseVersion string) (*KubeInfo, error) {
 		}
 		// Use istioctl from base version to inject the sidecar.
 		i.localPath = filepath.Join(releaseDir, "/bin/istioctl")
-		os.Chmod(i.localPath, 0755)
+		if err = os.Chmod(i.localPath, 0755); err != nil {
+			return nil, err
+		}
+		i.defaultProxy = true
 	} else {
 		releaseDir = util.GetResourcePath("")
 	}
@@ -163,6 +166,15 @@ func (k *KubeInfo) Setup() error {
 		return err
 	}
 	k.Ingress = in
+
+	if *withMixerValidator {
+		// Run the script to set up the certificate.
+		certGenerator := util.GetResourcePath("./install/kubernetes/webhook-create-signed-cert.sh")
+		if _, err = util.Shell("%s --service istio-mixer-validator --secret istio-mixer-validator --namespace %s", certGenerator, k.Namespace); err != nil {
+			return err
+		}
+
+	}
 	return nil
 }
 
@@ -293,6 +305,19 @@ func (k *KubeInfo) deployIstio() error {
 		return err
 	}
 
+	if *withMixerValidator {
+		baseMixerValidatorYaml := filepath.Join(k.ReleaseDir, istioInstallDir, mixerValidatorFile)
+		testMixerValidatorYaml := filepath.Join(k.TmpDir, "yaml", mixerValidatorFile)
+		if err := k.generateIstio(baseMixerValidatorYaml, testMixerValidatorYaml); err != nil {
+			log.Errorf("Generating yaml %s failed", testMixerValidatorYaml)
+			return err
+		}
+		if err := util.KubeApply(k.Namespace, testMixerValidatorYaml); err != nil {
+			log.Errorf("Istio mixer validator %s deployment failed", testMixerValidatorYaml)
+			return err
+		}
+	}
+
 	if *useAutomaticInjection {
 		baseSidecarInjectorYAML := util.GetResourcePath(filepath.Join(istioInstallDir, *sidecarInjectorFile))
 		testSidecarInjectorYAML := filepath.Join(k.TmpDir, "yaml", *sidecarInjectorFile)
@@ -368,7 +393,7 @@ func (k *KubeInfo) generateIstio(src, dst string) error {
 		// Customize mixer's configStoreURL to limit watching resources in the testing namespace.
 		vs := url.Values{}
 		vs.Add("ns", *namespace)
-		content = replacePattern(k, content, "--configStoreURL=k8s://", "--configStoreURL=k8s://?%s"+vs.Encode())
+		content = replacePattern(k, content, "--configStoreURL=k8s://", "--configStoreURL=k8s://?"+vs.Encode())
 	}
 
 	// Replace long refresh delays with short ones for the sake of tests.
