@@ -15,10 +15,15 @@
 package workload
 
 import (
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"io/ioutil"
 	"testing"
 
 	_ "os"
+
+	"fmt"
 
 	"istio.io/istio/security/pkg/pki/util"
 	fileUtil "istio.io/istio/security/pkg/util"
@@ -57,38 +62,50 @@ func TestSecretFileServer(t *testing.T) {
 	if bundleErr := server.SetIdentityKeyCertBundle("test", bundle); bundleErr != nil {
 		t.Errorf("%v", bundleErr)
 	}
-	/*
-		// validate file contents
-		cert, err := readFile(fmt.Sprintf("%s/%s/cert.pem", tmpdir, "test"))
-		if err != nil {
-			t.Errorf("failed to read certificate: %v", err)
-		}
-		if cert != string(certBytes) {
-			t.Errorf("invalid certificate")
-		}
 
-		key, err := readFile(fmt.Sprintf("%s/%s/key.pem", tmpdir, "test"))
-		if err != nil {
-			t.Errorf("failed to read private key: %v", err)
-		}
-		if key != string(privKeyBytes) {
-			t.Errorf("invalid private key")
-		}
+	// validate file contents
+	cert, err := readFile(fmt.Sprintf("%s/%s/cert.pem", tmpdir, "test"))
+	if err != nil {
+		t.Errorf("failed to read certificate: %v", err)
+	}
 
-		chain, err := readFile(fmt.Sprintf("%s/%s/chain.pem", tmpdir, "test"))
-		if err != nil {
-			t.Errorf("failed to read certificate chain: %v", err)
-		}
-		if chain != string(certChainBytes) {
-			t.Errorf("invalid certificate chain")
-		}
+	key, err := readFile(fmt.Sprintf("%s/%s/key.pem", tmpdir, "test"))
+	if err != nil {
+		t.Errorf("failed to read private key: %v", err)
+	}
 
-		root, err := readFile(fmt.Sprintf("%s/%s/root.pem", tmpdir, "test"))
-		if err != nil {
-			t.Errorf("failed to read root certificate: %v", err)
-		}
-		if root != string(rootCertBytes) {
-			t.Errorf("invalid root certificate")
-		}
-	*/
+	root, err := readFile(fmt.Sprintf("%s/%s/root.pem", tmpdir, "test"))
+	if err != nil {
+		t.Errorf("failed to read root certificate: %v", err)
+	}
+
+	roots := x509.NewCertPool()
+	ok := roots.AppendCertsFromPEM([]byte(root))
+	if !ok {
+		panic("failed to parse root certificate")
+	}
+
+	// Verify certificate and private key
+	if _, err = tls.X509KeyPair([]byte(cert), []byte(key)); err != nil {
+		t.Fatalf("failed to verify private key and certificate: %v", err)
+	}
+
+	block, _ := pem.Decode([]byte(cert))
+	if block == nil {
+		panic("failed to parse certificate PEM")
+	}
+
+	certificate, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		panic("failed to parse certificate: " + err.Error())
+	}
+
+	opts := x509.VerifyOptions{
+		DNSName: "ca.istio.io",
+		Roots:   roots,
+	}
+
+	if _, err := certificate.Verify(opts); err != nil {
+		panic("failed to verify certificate: " + err.Error())
+	}
 }

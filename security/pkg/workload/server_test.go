@@ -15,6 +15,7 @@
 package workload
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -26,14 +27,13 @@ import (
 	"testing"
 	"time"
 
-	"crypto/tls"
-
 	api "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/auth"
 	sds "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v2"
 	"github.com/gogo/protobuf/proto"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+
 	"istio.io/istio/security/pkg/pki/util"
 )
 
