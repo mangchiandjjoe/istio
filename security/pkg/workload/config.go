@@ -33,6 +33,10 @@ type Config struct {
 	// FileUtil is valid in FILE mode. It supports file I/O in a FS.
 	FileUtil util.FileUtil
 
+	// ServiceIdentityCertFile is the directory that will contains KeyCertBundle for identities
+	// private key, certificate, root certificate, certificate chain will be stored under each identity directory
+	ServiceIdentityDir string
+
 	// ServiceIdentityCertFile is valid in FILE mode. It specifies the file path for service identity certificate.
 	ServiceIdentityCertFile string
 

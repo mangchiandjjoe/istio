@@ -15,13 +15,13 @@
 package na
 
 import (
-	"bytes"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
 	"istio.io/istio/pkg/log"
-	mockclient "istio.io/istio/security/pkg/caclient/grpc/mock"
+	"istio.io/istio/security/pkg/pki/ca"
 	"istio.io/istio/security/pkg/platform"
 	mockpc "istio.io/istio/security/pkg/platform/mock"
 	"istio.io/istio/security/pkg/util"
@@ -29,6 +29,84 @@ import (
 	"istio.io/istio/security/pkg/workload"
 	pb "istio.io/istio/security/proto"
 )
+
+const (
+	maxMockCAClientSuccessReturns = 3
+)
+
+type MockCAClient struct {
+	certChainFile   string
+	signingCertFile string
+	signingKeyFile  string
+	rootCertFile    string
+	Response        *pb.CsrResponse
+	Err             error
+	Counter         int
+}
+
+func (f *MockCAClient) SendCSR(req *pb.CsrRequest, pc platform.Client, addr string) (*pb.CsrResponse, error) {
+	if f.Counter >= maxMockCAClientSuccessReturns {
+		return nil, fmt.Errorf("terminating the test with errors")
+	}
+
+	f.Counter++
+
+	if f.Response != nil || f.Err != nil {
+		return f.Response, f.Err
+	}
+
+	defaultWorkloadCertTTL := 30 * time.Minute
+	maxWorkloadCertTTL := time.Hour
+
+	caopts, err := ca.NewPluggedCertIstioCAOptions(f.certChainFile, f.signingCertFile, f.signingKeyFile, f.rootCertFile,
+		defaultWorkloadCertTTL, maxWorkloadCertTTL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create a plugged-cert CA Options: %v", err)
+	}
+
+	istioca, err := ca.NewIstioCA(caopts)
+	if err != nil {
+		return nil, fmt.Errorf("got error while createing plugged-cert CA: %v", err)
+	}
+	if istioca == nil {
+		return nil, fmt.Errorf("failed to create a plugged-cert CA")
+	}
+
+	_, _, chain, _ := istioca.GetCAKeyCertBundle().GetAll()
+
+	cert, err := istioca.Sign(req.CsrPem, defaultWorkloadCertTTL, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign. (%v)", err)
+	}
+
+	return &pb.CsrResponse{
+		IsApproved: true,
+		SignedCert: cert,
+		CertChain:  chain,
+	}, nil
+}
+
+// MockFileUtil is a mocked FileUtil for testing.
+type MockFileUtil struct {
+	Content map[string][]byte
+}
+
+// Read returns the filename entry in ReadContent or an error.
+func (f MockFileUtil) Read(filename string) ([]byte, error) {
+	if f.Content[filename] != nil {
+		return f.Content[filename], nil
+	}
+	return nil, fmt.Errorf("file not found")
+}
+
+// Write writes data to the filename entry in WriteContent.
+func (f MockFileUtil) Write(filename string, content []byte, perm os.FileMode) error {
+	if f.Content == nil {
+		f.Content = make(map[string][]byte)
+	}
+	f.Content[filename] = content
+	return nil
+}
 
 func TestStartWithArgs(t *testing.T) {
 	generalConfig := Config{
@@ -40,47 +118,54 @@ func TestStartWithArgs(t *testing.T) {
 		CSRMaxRetries:             3,
 		CSRGracePeriodPercentage:  50,
 		LoggingOptions:            log.DefaultOptions(),
-		RootCertFile:              "ca_file",
-		KeyFile:                   "pkey",
-		CertChainFile:             "cert_file",
+		RootCertFile:              "../../../samples/plugin_ca_certs/root-cert.pem",
+		KeyFile:                   "../../../samples/plugin_ca_certs/ca-key.pem",
+		CertChainFile:             "../../../samples/plugin_ca_certs/ca-cert.pem",
 	}
-	signedCert := []byte(`TESTCERT`)
-	certChain := []byte(`CERTCHAIN`)
+
 	testCases := map[string]struct {
 		config      *Config
 		pc          platform.Client
-		cAClient    *mockclient.FakeCAClient
+		cAClient    *MockCAClient
 		certUtil    util.CertUtil
 		expectedErr string
 		sendTimes   int
-		fileContent []byte
+		fileContent []string
 	}{
 		"Success": {
 			config: &generalConfig,
 			pc:     mockpc.FakeClient{nil, "", "service1", "", []byte{}, "", true},
-			cAClient: &mockclient.FakeCAClient{
-				0, &pb.CsrResponse{IsApproved: true, SignedCert: signedCert, CertChain: certChain}, nil},
-			certUtil:    mockutil.FakeCertUtil{time.Duration(0), nil},
+			cAClient: &MockCAClient{
+				certChainFile:   "../../../samples/plugin_ca_certs/cert-chain.pem",
+				signingCertFile: "../../../samples/plugin_ca_certs/ca-cert.pem",
+				signingKeyFile:  "../../../samples/plugin_ca_certs/ca-key.pem",
+				rootCertFile:    "../../../samples/plugin_ca_certs/root-cert.pem",
+			},
+			certUtil:    mockutil.FakeCertUtil{time.Duration(10), nil},
 			expectedErr: "node agent can't get the CSR approved from Istio CA after max number of retries (3)",
-			sendTimes:   12,
-			fileContent: append(signedCert, certChain...),
+			sendTimes:   3,
+			fileContent: []string{
+				"/service1/cert.pem",
+				"/service1/key.pem",
+				"/service1/chain.pem",
+				"/service1/root.pem",
+			},
 		},
 		"Config Nil error": {
 			pc:          mockpc.FakeClient{nil, "", "service1", "", []byte{}, "", true},
-			cAClient:    &mockclient.FakeCAClient{0, nil, nil},
+			cAClient:    &MockCAClient{},
 			expectedErr: "node Agent configuration is nil",
 			sendTimes:   0,
 		},
 		"Platform error": {
 			config:      &generalConfig,
 			pc:          mockpc.FakeClient{nil, "", "service1", "", []byte{}, "", false},
-			cAClient:    &mockclient.FakeCAClient{0, nil, nil},
+			cAClient:    &MockCAClient{},
 			expectedErr: "node Agent is not running on the right platform",
 			sendTimes:   0,
 		},
 		"Create CSR error": {
 			// 128 is too small for a RSA private key. GenCSR will return error.
-
 			config: &Config{
 				IstioCAAddress:     "ca_addr",
 				ServiceIdentityOrg: "Google Inc.",
@@ -89,67 +174,66 @@ func TestStartWithArgs(t *testing.T) {
 				CSRInitialRetrialInterval: time.Millisecond,
 				CSRMaxRetries:             3,
 				CSRGracePeriodPercentage:  50,
-				RootCertFile:              "ca_file",
-				KeyFile:                   "pkey",
-				CertChainFile:             "cert_file",
+				RootCertFile:              "../../../samples/plugin_ca_certs/root-cert.pem",
+				KeyFile:                   "../../../samples/plugin_ca_certs/ca-key.pem",
+				CertChainFile:             "../../../samples/plugin_ca_certs/ca-cert.pem",
 				LoggingOptions:            log.DefaultOptions(),
 			},
 			pc:          mockpc.FakeClient{nil, "", "service1", "", []byte{}, "", true},
-			cAClient:    &mockclient.FakeCAClient{0, nil, nil},
+			cAClient:    &MockCAClient{},
 			expectedErr: "CSR creation failed (crypto/rsa: message too long for RSA public key size)",
 			sendTimes:   0,
 		},
 		"Getting agent credential error": {
 			config:      &generalConfig,
 			pc:          mockpc.FakeClient{nil, "", "service1", "", nil, "Err1", true},
-			cAClient:    &mockclient.FakeCAClient{0, nil, nil},
+			cAClient:    &MockCAClient{},
 			expectedErr: "request creation fails on getting agent credential (Err1)",
 			sendTimes:   0,
 		},
 		"SendCSR empty response error": {
 			config:      &generalConfig,
 			pc:          mockpc.FakeClient{nil, "", "service1", "", []byte{}, "", true},
-			cAClient:    &mockclient.FakeCAClient{0, nil, nil},
+			cAClient:    &MockCAClient{},
 			expectedErr: "node agent can't get the CSR approved from Istio CA after max number of retries (3)",
-			sendTimes:   4,
+			sendTimes:   3,
 		},
 		"SendCSR returns error": {
 			config:      &generalConfig,
 			pc:          mockpc.FakeClient{nil, "", "service1", "", []byte{}, "", true},
-			cAClient:    &mockclient.FakeCAClient{0, nil, fmt.Errorf("error returned from CA")},
+			cAClient:    &MockCAClient{Err: fmt.Errorf("error returned from CA")},
 			expectedErr: "node agent can't get the CSR approved from Istio CA after max number of retries (3)",
-			sendTimes:   4,
+			sendTimes:   3,
 		},
 		"SendCSR not approved": {
 			config:      &generalConfig,
 			pc:          mockpc.FakeClient{nil, "", "service1", "", []byte{}, "", true},
-			cAClient:    &mockclient.FakeCAClient{0, &pb.CsrResponse{IsApproved: false}, nil},
+			cAClient:    &MockCAClient{Response: &pb.CsrResponse{IsApproved: false}},
 			expectedErr: "node agent can't get the CSR approved from Istio CA after max number of retries (3)",
-			sendTimes:   4,
+			sendTimes:   3,
 		},
 		"SendCSR parsing error": {
-			config: &generalConfig,
-			pc:     mockpc.FakeClient{nil, "", "service1", "", []byte{}, "", true},
-			cAClient: &mockclient.FakeCAClient{
-				0, &pb.CsrResponse{IsApproved: true, SignedCert: signedCert, CertChain: []byte{}}, nil},
+			config:      &generalConfig,
+			pc:          mockpc.FakeClient{nil, "", "service1", "", []byte{}, "", true},
+			cAClient:    &MockCAClient{Response: &pb.CsrResponse{IsApproved: true, SignedCert: []byte{}, CertChain: []byte{}}},
 			certUtil:    mockutil.FakeCertUtil{time.Duration(0), fmt.Errorf("cert parsing error")},
 			expectedErr: "node agent can't get the CSR approved from Istio CA after max number of retries (3)",
-			sendTimes:   4,
+			sendTimes:   3,
 		},
 	}
 
 	for id, c := range testCases {
 		log.Errorf("Start to test %s", id)
-		fakeFileUtil := mockutil.FakeFileUtil{
-			ReadContent:  make(map[string][]byte),
-			WriteContent: make(map[string][]byte),
+
+		fakeFileUtil := MockFileUtil{
+			Content: make(map[string][]byte),
 		}
+
 		fakeWorkloadIO, _ := workload.NewSecretServer(
 			workload.Config{
-				Mode:                          workload.SecretFile,
-				FileUtil:                      fakeFileUtil,
-				ServiceIdentityCertFile:       "cert_file",
-				ServiceIdentityPrivateKeyFile: "key_file",
+				Mode:               workload.SecretFile,
+				FileUtil:           fakeFileUtil,
+				ServiceIdentityDir: "",
 			},
 		)
 		na := nodeAgentInternal{c.config, c.pc, c.cAClient, "service1", fakeWorkloadIO, c.certUtil}
@@ -157,13 +241,16 @@ func TestStartWithArgs(t *testing.T) {
 		if err.Error() != c.expectedErr {
 			t.Errorf("Test case [%s]: incorrect error message: %s VS (expected) %s", id, err.Error(), c.expectedErr)
 		}
+
 		if c.cAClient.Counter != c.sendTimes {
 			t.Errorf("Test case [%s]: sendCSR is called incorrect times: %d VS (expected) %d",
 				id, c.cAClient.Counter, c.sendTimes)
 		}
-		if c.fileContent != nil && !bytes.Equal(fakeFileUtil.WriteContent["cert_file"], c.fileContent) {
-			t.Errorf("Test case [%s]: cert file content incorrect: %s VS (expected) %s",
-				id, fakeFileUtil.WriteContent["cert_file"], c.fileContent)
+
+		for _, path := range c.fileContent {
+			if _, err := fakeFileUtil.Read(path); err != nil {
+				t.Errorf(err.Error())
+			}
 		}
 	}
 }

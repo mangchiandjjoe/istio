@@ -14,6 +14,12 @@
 
 package workload
 
+import (
+	"fmt"
+
+	"istio.io/istio/security/pkg/pki/util"
+)
+
 const (
 	keyFilePermission  = 0600
 	certFilePermission = 0644
@@ -24,12 +30,29 @@ type SecretFileServer struct {
 	cfg Config
 }
 
-// SetServiceIdentityPrivateKey sets the service identity private key into the file system.
-func (sf *SecretFileServer) SetServiceIdentityPrivateKey(content []byte) error {
-	return sf.cfg.FileUtil.Write(sf.cfg.ServiceIdentityPrivateKeyFile, content, keyFilePermission)
-}
+// SetIdentityKeyCertBundle sets the service identity private key into the file system.
+func (sf *SecretFileServer) SetIdentityKeyCertBundle(identity string, bundle util.KeyCertBundle) error {
+	cert, key, chain, root := bundle.GetAllPem()
 
-// SetServiceIdentityCert sets the service identity certificate into the file system.
-func (sf *SecretFileServer) SetServiceIdentityCert(content []byte) error {
-	return sf.cfg.FileUtil.Write(sf.cfg.ServiceIdentityCertFile, content, certFilePermission)
+	if err := sf.cfg.FileUtil.Write(fmt.Sprintf("%s/%s/key.pem", sf.cfg.ServiceIdentityDir, identity),
+		key, keyFilePermission); err != nil {
+		return fmt.Errorf("unable to store private key: %v", err)
+	}
+
+	if err := sf.cfg.FileUtil.Write(fmt.Sprintf("%s/%s/cert.pem", sf.cfg.ServiceIdentityDir, identity),
+		cert, certFilePermission); err != nil {
+		return fmt.Errorf("unable to store certificate: %v", err)
+	}
+
+	if err := sf.cfg.FileUtil.Write(fmt.Sprintf("%s/%s/chain.pem", sf.cfg.ServiceIdentityDir, identity),
+		chain, certFilePermission); err != nil {
+		return fmt.Errorf("unable to store certificate chain: %v", err)
+	}
+
+	if err := sf.cfg.FileUtil.Write(fmt.Sprintf("%s/%s/root.pem", sf.cfg.ServiceIdentityDir, identity),
+		root, certFilePermission); err != nil {
+		return fmt.Errorf("unable to store root certificate: %v", err)
+	}
+
+	return nil
 }
