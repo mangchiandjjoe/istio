@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"time"
 
+	"io/ioutil"
+
 	"istio.io/istio/pkg/log"
 	"istio.io/istio/security/pkg/caclient/grpc"
 	pkiutil "istio.io/istio/security/pkg/pki/util"
@@ -39,10 +41,24 @@ type nodeAgentInternal struct {
 	certUtil     util.CertUtil
 }
 
+func readFile(path string) ([]byte, error) {
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return []byte(""), err
+	}
+	return data, nil
+}
+
 // Start starts the node Agent.
 func (na *nodeAgentInternal) Start() error {
 	if na.config == nil {
 		return fmt.Errorf("node Agent configuration is nil")
+	}
+
+	// Read root certificate
+	rootCertificate, err := readFile(na.config.RootCertFile)
+	if err != nil {
+		return fmt.Errorf("failed to read root certificate files: %v", err)
 	}
 
 	if !na.pc.IsProperPlatform() {
@@ -74,13 +90,17 @@ func (na *nodeAgentInternal) Start() error {
 				log.Errorf("Error getting TTL from approved cert: %v", ttlErr)
 				success = false
 			} else {
-				if writeErr := na.secretServer.SetServiceIdentityCert(
-					append(resp.SignedCert, resp.CertChain...)); writeErr != nil {
-					return writeErr
+				// Generate KeyCertBundle
+				bundle, bundleErr := pkiutil.NewVerifiedKeyCertBundleFromPem(resp.SignedCert, privateKey, resp.CertChain, rootCertificate)
+				if bundleErr != nil {
+					return bundleErr
 				}
-				if writeErr := na.secretServer.SetServiceIdentityPrivateKey(privateKey); writeErr != nil {
-					return writeErr
+
+				// Update secret server
+				if setErr := na.secretServer.SetIdentityKeyCertBundle(na.identity, bundle); setErr != nil {
+					return setErr
 				}
+
 				log.Infof("CSR is approved successfully. Will renew cert in %s", waitTime.String())
 				retries = 0
 				retrialInterval = na.config.CSRInitialRetrialInterval

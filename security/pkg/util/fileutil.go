@@ -15,8 +15,14 @@
 package util
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
+)
+
+const (
+	identityDirPermission = 0755
 )
 
 // FileUtil is the interface for utility functions operating on files.
@@ -38,5 +44,21 @@ func (f FileUtilImpl) Read(filename string) ([]byte, error) {
 
 // Write writes data to a file named by filename.
 func (f FileUtilImpl) Write(filename string, content []byte, perm os.FileMode) error {
+	// If the destination exists and it should not be a directory
+	if stat, err := os.Stat(filename); err == nil && stat.IsDir() {
+		return fmt.Errorf("unable to write content to the directory: %v", filename)
+	}
+
+	// If the parent path of the destination exists, then it should not be a file
+	if stat, err := os.Stat(filepath.Dir(filename)); err == nil {
+		if !stat.IsDir() {
+			return fmt.Errorf("unable to write content to the destination: %v", filename)
+		}
+	} else {
+		if err := os.MkdirAll(filepath.Dir(filename), identityDirPermission); err != nil {
+			return fmt.Errorf("unable to write file: %v", err)
+		}
+	}
+
 	return ioutil.WriteFile(filename, content, perm)
 }

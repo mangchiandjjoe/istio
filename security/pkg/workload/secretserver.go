@@ -16,14 +16,14 @@ package workload
 
 import (
 	"fmt"
+
+	"istio.io/istio/security/pkg/pki/util"
 )
 
 // SecretServer is for implementing the communication from the node agent to the workload.
 type SecretServer interface {
-	// SetServiceIdentityPrivateKey sets the service identity private key to the channel accessible to the workload.
-	SetServiceIdentityPrivateKey([]byte) error
-	// SetServiceIdentityCert sets the service identity cert to the channel accessible to the workload.
-	SetServiceIdentityCert([]byte) error
+	// SetServiceIdentityPrivateKeyAndCert insert or update KeySertBundle
+	SetIdentityKeyCertBundle(identity string, bundle util.KeyCertBundle) error
 }
 
 // NewSecretServer instantiates a SecretServer according to the configuration.
