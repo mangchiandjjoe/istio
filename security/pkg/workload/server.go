@@ -108,13 +108,10 @@ func (s *SDSServer) GetTLSCertificate(identity string) (*auth.TlsCertificate, er
 		return nil, fmt.Errorf("invalid identity")
 	}
 
-	cert, key, chain, root := keyCertBundle.GetAllPem()
-	certificateChain := append(root, chain...)
-	certificateChain = append(certificateChain, cert...)
-
+	cert, key, _, _ := keyCertBundle.GetAllPem()
 	tlsSecret := &auth.TlsCertificate{
 		CertificateChain: &core.DataSource{
-			Specifier: &core.DataSource_InlineBytes{certificateChain},
+			Specifier: &core.DataSource_InlineBytes{cert},
 		},
 		PrivateKey: &core.DataSource{
 			Specifier: &core.DataSource_InlineBytes{key},

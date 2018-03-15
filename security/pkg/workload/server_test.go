@@ -15,6 +15,9 @@
 package workload
 
 import (
+	"crypto/x509"
+	"encoding/pem"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net"
@@ -23,10 +26,7 @@ import (
 	"testing"
 	"time"
 
-	"crypto/x509"
-	"encoding/pem"
-
-	"fmt"
+	"crypto/tls"
 
 	api "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/auth"
@@ -118,8 +118,13 @@ func VerifySecrets(t *testing.T, response *api.DiscoveryResponse) {
 		panic("failed to parse root certificate")
 	}
 
-	certPEM := string(secret.GetTlsCertificate().CertificateChain.GetInlineBytes())
-	block, _ := pem.Decode([]byte(certPEM))
+	// Verify certificate and private key
+	if _, err = tls.X509KeyPair(secret.GetTlsCertificate().CertificateChain.GetInlineBytes(),
+		secret.GetTlsCertificate().PrivateKey.GetInlineBytes()); err != nil {
+		t.Fatalf("failed to verify private key and certificate: %v", err)
+	}
+
+	block, _ := pem.Decode(secret.GetTlsCertificate().CertificateChain.GetInlineBytes())
 	if block == nil {
 		panic("failed to parse certificate PEM")
 	}
@@ -129,7 +134,7 @@ func VerifySecrets(t *testing.T, response *api.DiscoveryResponse) {
 	}
 
 	opts := x509.VerifyOptions{
-		DNSName: "Root CA",
+		DNSName: "ca.istio.io",
 		Roots:   roots,
 	}
 
